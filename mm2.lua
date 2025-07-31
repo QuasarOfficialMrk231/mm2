@@ -1,186 +1,223 @@
--- MM2 Auto Collector GUI Script by QuasarOfficialMrk231
-
+-- UI & Services
+local TweenService = game:GetService("TweenService")
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local Workspace = game:GetService("Workspace")
-local PathfindingService = game:GetService("PathfindingService")
+local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
 
-local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local Humanoid = Character:WaitForChild("Humanoid")
-local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+-- Variables
+local gui = Instance.new("ScreenGui", game.CoreGui)
+local toggleButton = Instance.new("TextButton")
+local mainFrame = Instance.new("Frame")
+local UICorner = Instance.new("UICorner")
+local dragging, dragInput, dragStart, startPos
 
-local collected = 0
-local MAX_COLLECT = 40
-local savedPoint = nil
-local collecting = false
+-- Toggle Button (≡)
+toggleButton.Size = UDim2.new(0, 30, 0, 30)
+toggleButton.Position = UDim2.new(0, 100, 0, 100)
+toggleButton.Text = "≡"
+toggleButton.TextColor3 = Color3.new(1, 1, 1)
+toggleButton.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+toggleButton.Parent = gui
+UICorner.Parent = toggleButton
 
--- UI Elements
-local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
-local MainButton = Instance.new("TextButton")
-local Frame = Instance.new("Frame")
+-- Main Frame (Menu)
+mainFrame.Size = UDim2.new(0, 160, 0, 230)
+mainFrame.Position = UDim2.new(0, 140, 0, 100)
+mainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+mainFrame.Visible = false
+mainFrame.Parent = gui
+UICorner:Clone().Parent = mainFrame
 
-MainButton.Text = "≡"
-MainButton.Size = UDim2.new(0, 50, 0, 50)
-MainButton.Position = UDim2.new(0, 100, 0, 100)
-MainButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-MainButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-MainButton.Draggable = true
-MainButton.Active = true
-MainButton.Parent = ScreenGui
+-- Gradient for Buttons
+local function createGradient(button)
+    local UIStroke = Instance.new("UIStroke", button)
+    UIStroke.Thickness = 2
+    local Gradient = Instance.new("UIGradient", UIStroke)
+    Gradient.Color = ColorSequence.new{
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 0, 128)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 255, 255))
+    }
+end
 
-Frame.Size = UDim2.new(0, 200, 0, 160)
-Frame.Position = UDim2.new(0, 160, 0, 100)
-Frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-Frame.Visible = false
-Frame.Parent = ScreenGui
-
-local function createButton(text, posY, callback)
+-- Menu Buttons
+local buttons = {}
+local buttonNames = {"Начать бег", "Установить точку", "Телепорт к точке", "NoPlayerColl"}
+for i, name in ipairs(buttonNames) do
     local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(1, -10, 0, 30)
-    btn.Position = UDim2.new(0, 5, 0, posY)
-    btn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    btn.Text = text
-    btn.Parent = Frame
-    btn.MouseButton1Click:Connect(callback)
+    btn.Size = UDim2.new(1, -20, 0, 20)
+    btn.Position = UDim2.new(0, 10, 0, 60 + (i - 1) * 22)
+    btn.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+    btn.TextColor3 = Color3.new(1, 1, 1)
+    btn.Text = name
+    btn.Parent = mainFrame
+    createGradient(btn)
+    buttons[name] = btn
 end
 
--- Find nearest ball
-local function getNearestBall()
-    local ballsFolder = Workspace:FindFirstChild("BeachBalls") or Workspace:FindFirstChild("Coins")
-    if not ballsFolder then return nil end
+-- Speed Input Field
+local speedBox = Instance.new("TextBox")
+speedBox.Size = UDim2.new(1, -20, 0, 20)
+speedBox.Position = UDim2.new(0, 10, 0, 10)
+speedBox.PlaceholderText = "Скорость (default 16)"
+speedBox.TextColor3 = Color3.new(1, 1, 1)
+speedBox.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+speedBox.Parent = mainFrame
+createGradient(speedBox)
 
-    local nearest = nil
-    local shortest = math.huge
+-- Speed Button
+local speedButton = Instance.new("TextButton")
+speedButton.Size = UDim2.new(1, -20, 0, 20)
+speedButton.Position = UDim2.new(0, 10, 0, 32)
+speedButton.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+speedButton.TextColor3 = Color3.new(1, 1, 1)
+speedButton.Text = "Установить скорость"
+speedButton.Parent = mainFrame
+createGradient(speedButton)
 
-    for _, ball in ipairs(ballsFolder:GetChildren()) do
-        if ball:IsA("BasePart") then
-            local dist = (HumanoidRootPart.Position - ball.Position).Magnitude
-            if dist < shortest then
-                shortest = dist
-                nearest = ball
-            end
-        end
-    end
+-- Support Button
+local supportBtn = Instance.new("TextButton")
+supportBtn.Size = UDim2.new(1, -20, 0, 20)
+supportBtn.Position = UDim2.new(0, 10, 0, 60 + (#buttonNames) * 22)
+supportBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+supportBtn.TextColor3 = Color3.new(1, 1, 1)
+supportBtn.Text = "Поддержать автора @Ew3qs"
+supportBtn.Parent = mainFrame
+createGradient(supportBtn)
 
-    return nearest
-end
-
--- Pathfinding movement
-local pathParams = {
-    AgentRadius = 2,
-    AgentHeight = 5,
-    AgentCanJump = true,
-    Costs = {}
-}
-
-local function followPath(destination)
-    local path = PathfindingService:CreatePath(pathParams)
-    local success, msg = pcall(function()
-        path:ComputeAsync(HumanoidRootPart.Position, destination)
-    end)
-    if not success or path.Status ~= Enum.PathStatus.Success then
-        return false
-    end
-
-    local waypoints = path:GetWaypoints()
-    local nextIdx = 2  -- skip start point
-    local reachedConn, blockedConn
-
-    reachedConn = Humanoid.MoveToFinished:Connect(function(reached)
-        if reached and nextIdx <= #waypoints then
-            -- Random jump
-            if math.random() < 0.1 then
-                Humanoid.Jump = true
-            end
-            Humanoid:MoveTo(waypoints[nextIdx].Position)
-            nextIdx += 1
-        else
-            reachedConn:Disconnect()
-            if blockedConn then blockedConn:Disconnect() end
+-- Dragging Toggle Button
+local function makeDraggable(obj)
+    obj.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            startPos = obj.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
         end
     end)
-
-    blockedConn = path.Blocked:Connect(function(blockedIdx)
-        if blockedIdx >= nextIdx then
-            reachedConn:Disconnect()
-            blockedConn:Disconnect()
-            followPath(destination)
+    obj.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement then
+            dragInput = input
         end
     end)
-
-    if waypoints[nextIdx] then
-        Humanoid:MoveTo(waypoints[nextIdx].Position)
-    end
-
-    return true
-end
-
-local function moveToTargetWithPath(targetPart)
-    if not targetPart or not targetPart.Position then return end
-    if math.random() < 0.3 then
-        -- странный длинный путь
-        local offset = Vector3.new(math.random(-15,15), 0, math.random(-15,15))
-        followPath(targetPart.Position + offset)
-    else
-        followPath(targetPart.Position)
-    end
-end
-
--- Auto Collecting Logic
-local function autoCollect()
-    collecting = true
-    collected = 0
-
-    while collecting and collected < MAX_COLLECT do
-        local ball = getNearestBall()
-        if ball then
-            moveToTargetWithPath(ball)
-            collected += 1
-            wait(0.5)
-        else
-            wait(1)
+    UserInputService.InputChanged:Connect(function(input)
+        if input == dragInput and dragging then
+            local delta = input.Position - dragStart
+            obj.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
         end
-    end
+    end)
 end
+makeDraggable(toggleButton)
 
--- UI Buttons
-createButton("Начать бег", 10, function()
-    if not collecting then
-        spawn(autoCollect)
-    else
-        collecting = false
+-- Toggle Menu Visibility
+toggleButton.MouseButton1Click:Connect(function()
+    mainFrame.Visible = not mainFrame.Visible
+end)
+
+-- Action Variables
+local targetPoint = nil
+local noCollisions = false
+local running = false
+local walkSpeed = 16
+
+-- NoPlayerColl
+buttons["NoPlayerColl"].MouseButton1Click:Connect(function()
+    noCollisions = not noCollisions
+    for _, v in pairs(workspace:GetDescendants()) do
+        if v:IsA("BasePart") and v.CanCollide and not v:IsDescendantOf(LocalPlayer.Character) then
+            v.CanCollide = not noCollisions
+        end
     end
 end)
 
-createButton("Установить точку", 50, function()
-    savedPoint = HumanoidRootPart.Position
-end)
-
-createButton("Телепорт к точке", 90, function()
-    if savedPoint then
-        HumanoidRootPart.CFrame = CFrame.new(savedPoint)
+-- Set Point
+buttons["Установить точку"].MouseButton1Click:Connect(function()
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        targetPoint = LocalPlayer.Character.HumanoidRootPart.Position
     end
 end)
 
-createButton("NoPlayerColl", 130, function()
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer then
-            local char = plr.Character
-            if char then
-                for _, part in ipairs(char:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        part.CanCollide = false
-                    end
+-- Teleport to Point
+buttons["Телепорт к точке"].MouseButton1Click:Connect(function()
+    if targetPoint then
+        LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(targetPoint)
+    end
+end)
+
+-- Speed Setting
+speedButton.MouseButton1Click:Connect(function()
+    local value = tonumber(speedBox.Text)
+    if value and value > 0 then
+        walkSpeed = value
+        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+            LocalPlayer.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = walkSpeed
+        end
+    end
+end)
+
+-- Copy Support Link
+supportBtn.MouseButton1Click:Connect(function()
+    setclipboard("https://www.donationalerts.com/r/Ew3qs")
+end)
+
+-- Beachball Auto Collect
+buttons["Начать бег"].MouseButton1Click:Connect(function()
+    running = not running
+    if running then
+        task.spawn(function()
+            local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+            local humanoid = char:WaitForChild("Humanoid")
+            local hrp = char:WaitForChild("HumanoidRootPart")
+            humanoid.WalkSpeed = walkSpeed
+            local map = nil
+
+            for _, m in pairs(workspace:GetDescendants()) do
+                if m:IsA("Model") and m:GetAttribute("MapID") then
+                    map = m
+                    break
                 end
             end
-        end
+
+            while running do
+                if map and map:FindFirstChild("CoinContainer") then
+                    local targetCoin = nil
+                    local minDist = math.huge
+                    for _, coin in ipairs(map.CoinContainer:GetChildren()) do
+                        if coin:IsA("Part") and coin.Name == "Coin_Server" and coin:GetAttribute("CoinID") == "BeachBall" then
+                            local cv = coin:FindFirstChild("CoinVisual")
+                            if cv and cv.Transparency ~= 1 then
+                                local dist = (hrp.Position - coin.Position).Magnitude
+                                if dist < minDist then
+                                    minDist = dist
+                                    targetCoin = coin
+                                end
+                            end
+                        end
+                    end
+
+                    if targetCoin then
+                        local direction = (targetCoin.Position - hrp.Position).Unit
+                        while (hrp.Position - targetCoin.Position).Magnitude > 3 and running do
+                            local moveDir = direction + Vector3.new(
+                                math.random(-10, 10)/50,
+                                0,
+                                math.random(-10, 10)/50
+                            )
+                            humanoid:MoveTo(hrp.Position + moveDir * 5)
+
+                            if math.random() < 0.05 then
+                                humanoid.Jump = true
+                            end
+                            task.wait(0.1)
+                        end
+                    end
+                end
+                task.wait(0.2)
+            end
+        end)
     end
 end)
-
-MainButton.MouseButton1Click:Connect(function()
-    Frame.Visible = not Frame.Visible
-end)
-
-print("Script Loaded Successfully!")
