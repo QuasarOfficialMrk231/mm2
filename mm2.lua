@@ -1,29 +1,25 @@
--- // MM2 Beachball Autofarm with UI & Pathfinding //
-
 local Players = game:GetService("Players")
-local PathfindingService = game:GetService("PathfindingService")
-local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 
 local Player = Players.LocalPlayer
 local Character = Player.Character or Player.CharacterAdded:Wait()
-local Humanoid = Character:WaitForChild("Humanoid")
 local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
 
 local dragging = false
 local dragInput, mousePos, framePos
 local autoFarmActive = false
-local noPlayerCollide = false
+local noPlayerCollideActive = false
 local teleportPoint = nil
 local walkSpeed = 16
 
--- Create UI
+-- UI Creation
 local ScreenGui = Instance.new("ScreenGui", Player.PlayerGui)
 ScreenGui.ResetOnSpawn = false
 
 local ToggleButton = Instance.new("TextButton")
-ToggleButton.Size = UDim2.new(0, 40, 0, 40)
+ToggleButton.Size = UDim2.new(0, 30, 0, 30)
 ToggleButton.Position = UDim2.new(0, 100, 0, 100)
 ToggleButton.Text = "="
 ToggleButton.TextScaled = true
@@ -32,7 +28,7 @@ ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 ToggleButton.Parent = ScreenGui
 
 local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 200, 0, 250)
+MainFrame.Size = UDim2.new(0, 200, 0, 270)
 MainFrame.Position = UDim2.new(0, 150, 0, 100)
 MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
 MainFrame.Visible = false
@@ -47,6 +43,7 @@ UIStroke.Thickness = 2
 
 local UIListLayout = Instance.new("UIListLayout", MainFrame)
 UIListLayout.Padding = UDim.new(0, 5)
+UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
 local function createButton(text)
     local button = Instance.new("TextButton")
@@ -54,7 +51,6 @@ local function createButton(text)
     button.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
     button.TextColor3 = Color3.fromRGB(255, 255, 255)
     button.Text = text
-    button.Parent = MainFrame
 
     local stroke = Instance.new("UIStroke", button)
     stroke.Color = Color3.fromRGB(0, 150, 255)
@@ -63,6 +59,7 @@ local function createButton(text)
     local corner = Instance.new("UICorner", button)
     corner.CornerRadius = UDim.new(0, 6)
 
+    button.Parent = MainFrame
     return button
 end
 
@@ -82,7 +79,7 @@ local speedCorner = Instance.new("UICorner", SpeedBox)
 speedCorner.CornerRadius = UDim.new(0, 6)
 
 local setSpeedButton = createButton("Установить скорость")
-local autoFarmButton = createButton("Начать бег")
+local autoFarmButton = createButton("Начать полет")
 local setPointButton = createButton("Установить точку")
 local teleportButton = createButton("Телепорт к точке")
 local noPlayerCollButton = createButton("NoPlayerColl")
@@ -127,7 +124,6 @@ setSpeedButton.MouseButton1Click:Connect(function()
     local num = tonumber(SpeedBox.Text)
     if num then
         walkSpeed = num
-        Humanoid.WalkSpeed = walkSpeed
     end
 end)
 
@@ -135,7 +131,6 @@ supportButton.MouseButton1Click:Connect(function()
     setclipboard("https://www.donationalerts.com/r/Ew3qs")
 end)
 
-local noPlayerCollideActive = false
 noPlayerCollButton.MouseButton1Click:Connect(function()
     noPlayerCollideActive = not noPlayerCollideActive
     for _, v in pairs(workspace:GetDescendants()) do
@@ -155,34 +150,6 @@ teleportButton.MouseButton1Click:Connect(function()
     end
 end)
 
-local function moveToTarget(targetPos)
-    local path = PathfindingService:CreatePath({
-        AgentRadius = 2,
-        AgentHeight = 5,
-        AgentCanJump = true,
-        AgentJumpHeight = 7,
-        AgentMaxSlope = 45,
-    })
-
-    path:ComputeAsync(HumanoidRootPart.Position, targetPos)
-
-    if path.Status == Enum.PathStatus.Success then
-        local waypoints = path:GetWaypoints()
-        for _, waypoint in ipairs(waypoints) do
-            if not autoFarmActive then break end
-            Humanoid:MoveTo(waypoint.Position)
-            Humanoid.MoveToFinished:Wait()
-            if math.random() < 0.2 then
-                Humanoid.Jump = true
-                task.wait(0.3)
-            end
-        end
-    else
-        Humanoid:MoveTo(targetPos)
-        task.wait(1)
-    end
-end
-
 autoFarmButton.MouseButton1Click:Connect(function()
     autoFarmActive = not autoFarmActive
     if autoFarmActive then
@@ -195,22 +162,24 @@ autoFarmButton.MouseButton1Click:Connect(function()
                         if coin:IsA("Part") and coin.Name == "Coin_Server" and coin:GetAttribute("CoinID") == "BeachBall" then
                             local visual = coin:FindFirstChild("CoinVisual")
                             if visual and visual.Transparency ~= 1 then
-                                moveToTarget(coin.Position)
-                                task.wait(0.5)
+                                local goal = {}
+                                goal.CFrame = coin.CFrame + Vector3.new(0, 3, 0)
+
+                                local tweenInfo = TweenInfo.new((HumanoidRootPart.Position - coin.Position).Magnitude / walkSpeed, Enum.EasingStyle.Linear)
+                                local tween = TweenService:Create(HumanoidRootPart, tweenInfo, goal)
+                                tween:Play()
+
+                                tween.Completed:Wait()
+                                task.wait(0.5 + math.random() * 1.5) -- Рандомные паузы
+                                if math.random() < 0.3 then
+                                    Character.Humanoid.Jump = true
+                                end
                             end
                         end
                     end
                 end
-                wait(1)
+                task.wait(1)
             end
         end)
     end
 end)
-
-Humanoid:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
-    if Humanoid.WalkSpeed ~= walkSpeed then
-        Humanoid.WalkSpeed = walkSpeed
-    end
-end)
-
-Humanoid.WalkSpeed = walkSpeed
