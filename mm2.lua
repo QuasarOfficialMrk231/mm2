@@ -1,22 +1,18 @@
--- DeltaX BeachBall GUI & Functions (compact, mobile+PC, all features)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
 local player = Players.LocalPlayer
 
-local dragging, dragInput, dragStart, startPos
+local draggingBtn, draggingFrame, dragInputBtn, dragInputFrame, dragStartBtn, dragStartFrame, startPosBtn, startPosFrame
 local point = nil
 local collecting = false
 local flying = false
 local noCollide = false
 local walkSpeed = 16
 
--- Ограничения на координаты для безопасного телепорта
 local minX, maxX = -999999, 999999
 local minY, maxY = -999999, 999999
 local minZ, maxZ = -999999, 999999
-
 local function safeVector3(pos)
     local x = math.max(math.min(pos.X, maxX), minX)
     local y = math.max(math.min(pos.Y, maxY), minY)
@@ -24,7 +20,6 @@ local function safeVector3(pos)
     return Vector3.new(x, y, z)
 end
 
--- UI
 local gui = Instance.new("ScreenGui")
 gui.Name = "DeltaXBeachBallUI"
 gui.Parent = game:GetService("CoreGui")
@@ -41,7 +36,7 @@ dragBtn.AutoButtonColor = false
 
 local frame = Instance.new("Frame")
 frame.Size = UDim2.new(0, 152, 0, 212)
-frame.Position = UDim2.new(0.25, 0, 0.18, 0) -- раздельное положение с "="
+frame.Position = UDim2.new(0.25, 0, 0.18, 0)
 frame.BackgroundColor3 = Color3.fromRGB(16, 16, 18)
 frame.Visible = false
 frame.Parent = gui
@@ -53,38 +48,50 @@ stroke.Thickness = 2
 local corner = Instance.new("UICorner", frame)
 corner.CornerRadius = UDim.new(0, 9)
 
--- Drag logic for mobile/PC (каждый элемент отдельно)
-local function makeDraggable(guiObj)
-    guiObj.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            dragStart = input.Position
-            startPos = guiObj.Position
-            dragInput = input
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                end
-            end)
-        end
-    end)
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and (input == dragInput) and 
-           (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            local delta = input.Position - dragStart
-            guiObj.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-        end
-    end)
-end
-makeDraggable(dragBtn)
-makeDraggable(frame)
+-- Раздельный drag для "=" и окна
+dragBtn.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        draggingBtn = true
+        dragStartBtn = input.Position
+        startPosBtn = dragBtn.Position
+        dragInputBtn = input
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                draggingBtn = false
+            end
+        end)
+    end
+end)
+frame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        draggingFrame = true
+        dragStartFrame = input.Position
+        startPosFrame = frame.Position
+        dragInputFrame = input
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                draggingFrame = false
+            end
+        end)
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if draggingBtn and (input == dragInputBtn) and 
+       (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStartBtn
+        dragBtn.Position = UDim2.new(startPosBtn.X.Scale, startPosBtn.X.Offset + delta.X, startPosBtn.Y.Scale, startPosBtn.Y.Offset + delta.Y)
+    end
+    if draggingFrame and (input == dragInputFrame) and 
+       (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStartFrame
+        frame.Position = UDim2.new(startPosFrame.X.Scale, startPosFrame.X.Offset + delta.X, startPosFrame.Y.Scale, startPosFrame.Y.Offset + delta.Y)
+    end
+end)
 
--- Show/hide window (отдельно от "=")
 dragBtn.MouseButton1Click:Connect(function()
     frame.Visible = not frame.Visible
 end)
 
--- Button creator (compact buttons)
 local function createButton(text, posY)
     local btn = Instance.new("TextButton", frame)
     btn.Size = UDim2.new(0.87, 0, 0, 20)
@@ -103,7 +110,6 @@ local function createButton(text, posY)
     return btn
 end
 
--- UI Elements
 local speedBox = Instance.new("TextBox", frame)
 speedBox.Size = UDim2.new(0.57, 0, 0, 20)
 speedBox.Position = UDim2.new(0.07, 0, 1, -27)
@@ -136,17 +142,14 @@ local flightBtn = createButton("Полет к мячам", 80)
 local npcBtn = createButton("NoPlayerColl", 104)
 local supportBtn = createButton("Поддержать автора", 128)
 
--- @Ew3qs donate link
 local supportUrl = "https://www.donationalerts.com/r/Ew3qs"
 
--- Button toggles
 local toggles = {
     collect = false,
     flight = false,
     nocollide = false,
 }
 
--- Сохраняем состояние коллизии карты для восстановления
 local lastCollisions = {}
 
 local function setMapCollision(state)
@@ -168,7 +171,6 @@ local function setMapCollision(state)
     end
 end
 
--- Установить скорость
 setSpeedBtn.MouseButton1Click:Connect(function()
     local val = tonumber(speedBox.Text)
     if val and val > 0 and val <= 400 then
@@ -182,7 +184,6 @@ setSpeedBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- Установить точку
 setPointBtn.MouseButton1Click:Connect(function()
     local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
     if hrp then
@@ -193,7 +194,6 @@ setPointBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- Телепорт к точке
 tpBtn.MouseButton1Click:Connect(function()
     local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
     if hrp and point then
@@ -201,7 +201,6 @@ tpBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- Сбор мячей (toggle, with 1s delay and "walking")
 collectBtn.MouseButton1Click:Connect(function()
     toggles.collect = not toggles.collect
     collectBtn.Text = toggles.collect and "Сбор: ВКЛ" or "Сбор мячей"
@@ -225,13 +224,7 @@ collectBtn.MouseButton1Click:Connect(function()
                     if cv and cv.Transparency ~= 1 then
                         local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
                         if hrp then
-                            local steps = math.ceil((hrp.Position - coin.Position).Magnitude / (walkSpeed * 0.5))
-                            local dir = (coin.Position - hrp.Position).Unit
-                            for i = 1, steps do
-                                if not toggles.collect then break end
-                                hrp.CFrame = hrp.CFrame + dir * walkSpeed * 0.5
-                                RunService.Heartbeat:Wait()
-                            end
+                            hrp.CFrame = CFrame.new(safeVector3(coin.Position))
                             task.wait(0.4)
                             local dir2 = hrp.CFrame.LookVector
                             hrp.CFrame = hrp.CFrame + dir2 * 2
@@ -249,7 +242,6 @@ collectBtn.MouseButton1Click:Connect(function()
     end)
 end)
 
--- Полет к мячам (toggle, с Tween-полетом как в moonhub/Kaspik)
 flightBtn.MouseButton1Click:Connect(function()
     toggles.flight = not toggles.flight
     flightBtn.Text = toggles.flight and "Полет: ВКЛ" or "Полет к мячам"
@@ -276,16 +268,17 @@ flightBtn.MouseButton1Click:Connect(function()
                         local cv = coin:FindFirstChild("CoinVisual")
                         if cv and cv.Transparency ~= 1 and hrp then
                             found = true
-                            local targetPos = coin.Position
-                            targetPos = Vector3.new(targetPos.X, math.max(targetPos.Y, 5), targetPos.Z)
-                            local duration = math.clamp((hrp.Position - targetPos).Magnitude / walkSpeed, 0.2, 5)
-                            local tweenInfo = TweenInfo.new(
-                                duration, -- duration зависит от расстояния и скорости
-                                Enum.EasingStyle.Linear
-                            )
-                            local tween = TweenService:Create(hrp, tweenInfo, {CFrame = CFrame.new(targetPos)})
-                            tween:Play()
-                            tween.Completed:Wait()
+                            local maxSteps = 120
+                            local steps = 0
+                            while toggles.flight and (hrp.Position - coin.Position).Magnitude > 2 and steps < maxSteps do
+                                local from = hrp.Position
+                                local to = coin.Position
+                                local dir = (Vector3.new(to.X, from.Y, to.Z) - from).Unit
+                                local nextPos = from + dir * math.min(walkSpeed * 0.5, (Vector3.new(to.X, from.Y, to.Z) - from).Magnitude)
+                                hrp.CFrame = CFrame.new(safeVector3(nextPos), Vector3.new(to.X, from.Y, to.Z))
+                                steps = steps + 1
+                                task.wait(0.05)
+                            end
                             break
                         end
                     end
@@ -299,7 +292,6 @@ flightBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- NoPlayerColl (toggle)
 npcBtn.MouseButton1Click:Connect(function()
     toggles.nocollide = not toggles.nocollide
     npcBtn.Text = toggles.nocollide and "NoColl: ВКЛ" or "NoPlayerColl"
@@ -317,7 +309,6 @@ npcBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- Поддержать автора (копировать ссылку)
 supportBtn.MouseButton1Click:Connect(function()
     if setclipboard then
         setclipboard(supportUrl)
@@ -328,7 +319,6 @@ supportBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- Anti-AFK
 pcall(function()
     local VirtualUser = game:GetService("VirtualUser")
     Players.LocalPlayer.Idled:Connect(function()
@@ -337,7 +327,6 @@ pcall(function()
     end)
 end)
 
--- Сброс кнопок при скрытии окна
 frame:GetPropertyChangedSignal("Visible"):Connect(function()
     if not frame.Visible then
         setPointBtn.Text = "Установить точку"
