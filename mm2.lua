@@ -1,6 +1,7 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
 local player = Players.LocalPlayer
 
 local draggingBtn, draggingFrame, dragInputBtn, dragInputFrame, dragStartBtn, dragStartFrame, startPosBtn, startPosFrame
@@ -151,6 +152,7 @@ local toggles = {
 }
 
 local lastCollisions = {}
+local lastGravity = Workspace.Gravity
 
 local function setMapCollision(state)
     if not state then
@@ -168,6 +170,15 @@ local function setMapCollision(state)
             end
         end
         lastCollisions = {}
+    end
+end
+
+local function setGravity(state)
+    if not state then
+        lastGravity = Workspace.Gravity
+        Workspace.Gravity = 0
+    else
+        Workspace.Gravity = lastGravity
     end
 end
 
@@ -201,7 +212,7 @@ tpBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- Сбор мячей: обычный телепорт, убран телепорт вперед
+-- Сбор мячей: обычный телепорт, рандомная задержка
 collectBtn.MouseButton1Click:Connect(function()
     toggles.collect = not toggles.collect
     collectBtn.Text = toggles.collect and "Сбор: ВКЛ" or "Сбор мячей"
@@ -226,8 +237,9 @@ collectBtn.MouseButton1Click:Connect(function()
                         local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
                         if hrp then
                             hrp.CFrame = CFrame.new(safeVector3(coin.Position))
-                            task.wait(0.5) -- задержка на мяче
+                            task.wait(math.random(15, 30)/10) -- задержка от 1.5 до 3 секунд
                             if point then
+                                task.wait(math.random(10, 20)/10) -- задержка от 1 до 2 секунд
                                 hrp.CFrame = CFrame.new(safeVector3(point))
                             end
                         end
@@ -247,6 +259,7 @@ flightBtn.MouseButton1Click:Connect(function()
         spawn(function()
             workspace.FallenPartsDestroyHeight = -10000
             setMapCollision(false)
+            setGravity(false)
             while toggles.flight do
                 local map, container
                 for _, m in pairs(workspace:GetChildren()) do
@@ -284,9 +297,11 @@ flightBtn.MouseButton1Click:Connect(function()
                 if not found then task.wait(1) end
             end
             setMapCollision(true)
+            setGravity(true)
         end)
     else
         setMapCollision(true)
+        setGravity(true)
     end
 end)
 
