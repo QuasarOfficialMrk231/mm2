@@ -2,10 +2,14 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
 local player = Players.LocalPlayer
 
-local draggingBtn, draggingFrame, dragInputBtn, dragInputFrame, dragStartBtn, dragStartFrame, startPosBtn, startPosFrame
+local dragging, dragInput, dragStart, startPos
 local point = nil
+local collecting = false
+local flying = false
+local noCollide = false
 local walkSpeed = 16
 
 -- Ограничения на координаты для безопасного телепорта
@@ -49,46 +53,31 @@ stroke.Thickness = 2
 local corner = Instance.new("UICorner", frame)
 corner.CornerRadius = UDim.new(0, 9)
 
--- Drag logic for "="
-dragBtn.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        draggingBtn = true
-        dragStartBtn = input.Position
-        startPosBtn = dragBtn.Position
-        dragInputBtn = input
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                draggingBtn = false
-            end
-        end)
-    end
-end)
-UserInputService.InputChanged:Connect(function(input)
-    if draggingBtn and (input == dragInputBtn) and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - dragStartBtn
-        dragBtn.Position = UDim2.new(startPosBtn.X.Scale, startPosBtn.X.Offset + delta.X, startPosBtn.Y.Scale, startPosBtn.Y.Offset + delta.Y)
-    end
-end)
--- Drag logic for frame
-frame.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        draggingFrame = true
-        dragStartFrame = input.Position
-        startPosFrame = frame.Position
-        dragInputFrame = input
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                draggingFrame = false
-            end
-        end)
-    end
-end)
-UserInputService.InputChanged:Connect(function(input)
-    if draggingFrame and (input == dragInputFrame) and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - dragStartFrame
-        frame.Position = UDim2.new(startPosFrame.X.Scale, startPosFrame.X.Offset + delta.X, startPosFrame.Y.Scale, startPosFrame.Y.Offset + delta.Y)
-    end
-end)
+-- Drag logic for mobile/PC (каждый элемент отдельно)
+local function makeDraggable(guiObj)
+    guiObj.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = guiObj.Position
+            dragInput = input
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input == dragInput) and 
+           (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            guiObj.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+end
+makeDraggable(dragBtn)
+makeDraggable(frame)
 
 -- Show/hide window (отдельно от "=")
 dragBtn.MouseButton1Click:Connect(function()
@@ -157,6 +146,28 @@ local toggles = {
     nocollide = false,
 }
 
+-- Сохраняем состояние коллизии карты для восстановления
+local lastCollisions = {}
+
+local function setMapCollision(state)
+    if not state then
+        lastCollisions = {}
+        for _, v in pairs(workspace:GetDescendants()) do
+            if v:IsA("BasePart") then
+                lastCollisions[v] = v.CanCollide
+                v.CanCollide = false
+            end
+        end
+    else
+        for part, collide in pairs(lastCollisions) do
+            if part and part.Parent then
+                part.CanCollide = collide
+            end
+        end
+        lastCollisions = {}
+    end
+end
+
 -- Установить скорость
 setSpeedBtn.MouseButton1Click:Connect(function()
     local val = tonumber(speedBox.Text)
@@ -190,14 +201,13 @@ tpBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- Сбор мячей (toggle, с задержкой и безопасным тп)
+-- Сбор мячей (toggle, with 1s delay and "walking")
 collectBtn.MouseButton1Click:Connect(function()
     toggles.collect = not toggles.collect
     collectBtn.Text = toggles.collect and "Сбор: ВКЛ" or "Сбор мячей"
     if not toggles.collect then return end
     spawn(function()
         while toggles.collect do
-            -- Поиск карты и контейнера
             local map, container
             for _, m in pairs(workspace:GetChildren()) do
                 if m:IsA("Model") and m:GetAttribute("MapID") then
@@ -208,82 +218,85 @@ collectBtn.MouseButton1Click:Connect(function()
             if map then container = map:FindFirstChild("CoinContainer") end
             if not container then task.wait(1) continue end
 
-            local found = false
             for _, coin in ipairs(container:GetChildren()) do
                 if not toggles.collect then break end
                 if coin:IsA("Part") and coin.Name == "Coin_Server" and coin:GetAttribute("CoinID") == "BeachBall" then
                     local cv = coin:FindFirstChild("CoinVisual")
                     if cv and cv.Transparency ~= 1 then
-                        found = true
                         local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
                         if hrp then
-                            -- Безопасное телепортирование в 2 этапа с задержкой:
-                            local dest = safeVector3(coin.Position)
-                            hrp.CFrame = CFrame.new(Vector3.new(dest.X, math.max(dest.Y, 2), dest.Z))
-                            task.wait(1) -- задержка между телепортами, чтобы не кикало
-                            -- "проходит вперед" (как W)
-                            local dir = hrp.CFrame.LookVector
-                            hrp.CFrame = hrp.CFrame + dir * 2
+                            local steps = math.ceil((hrp.Position - coin.Position).Magnitude / (walkSpeed * 0.5))
+                            local dir = (coin.Position - hrp.Position).Unit
+                            for i = 1, steps do
+                                if not toggles.collect then break end
+                                hrp.CFrame = hrp.CFrame + dir * walkSpeed * 0.5
+                                RunService.Heartbeat:Wait()
+                            end
+                            task.wait(0.4)
+                            local dir2 = hrp.CFrame.LookVector
+                            hrp.CFrame = hrp.CFrame + dir2 * 2
                             task.wait(0.2)
                             if point then
                                 hrp.CFrame = CFrame.new(safeVector3(point))
                             end
-                            task.wait(1) -- задержка между обработкой мячей
                         end
+                        task.wait(1)
                     end
                 end
             end
-            if not found then task.wait(1) end
+            task.wait(1)
         end
     end)
 end)
 
--- Полет к мячам (toggle, обрывчатый и щадящий)
+-- Полет к мячам (toggle, с Tween-полетом как в moonhub/Kaspik)
 flightBtn.MouseButton1Click:Connect(function()
     toggles.flight = not toggles.flight
     flightBtn.Text = toggles.flight and "Полет: ВКЛ" or "Полет к мячам"
-    if not toggles.flight then return end
-    spawn(function()
-        workspace.FallenPartsDestroyHeight = -10000
-        local map, container
-        for _, m in pairs(workspace:GetChildren()) do
-            if m:IsA("Model") and m:GetAttribute("MapID") then
-                map = m
-                break
-            end
-        end
-        if map then container = map:FindFirstChild("CoinContainer") end
-        if not container then return end
-
-        while toggles.flight do
-            -- Ищем ближайший BeachBall
-            local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-            local found = false
-            for _, coin in ipairs(container:GetChildren()) do
-                if not toggles.flight then break end
-                if coin:IsA("Part") and coin.Name == "Coin_Server" and coin:GetAttribute("CoinID") == "BeachBall" then
-                    local cv = coin:FindFirstChild("CoinVisual")
-                    if cv and cv.Transparency ~= 1 and hrp then
-                        found = true
-                        -- Делаем рывки по 5-8 позиций, с задержкой
-                        local dir = (coin.Position - hrp.Position).Unit
-                        local dist = (hrp.Position - coin.Position).Magnitude
-                        local steps = math.floor(dist / 8)
-                        for i = 1, steps do
-                            if not toggles.flight then break end
-                            hrp.CFrame = hrp.CFrame + dir * 8
-                            task.wait(0.11)
-                        end
-                        -- Финальный рывок
-                        hrp.CFrame = CFrame.new(safeVector3(coin.Position))
-                        task.wait(0.11)
+    if toggles.flight then
+        spawn(function()
+            workspace.FallenPartsDestroyHeight = -10000
+            setMapCollision(false)
+            while toggles.flight do
+                local map, container
+                for _, m in pairs(workspace:GetChildren()) do
+                    if m:IsA("Model") and m:GetAttribute("MapID") then
+                        map = m
                         break
                     end
                 end
+                if map then container = map:FindFirstChild("CoinContainer") end
+                if not container then task.wait(1) continue end
+
+                local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+                local found = false
+                for _, coin in ipairs(container:GetChildren()) do
+                    if not toggles.flight then break end
+                    if coin:IsA("Part") and coin.Name == "Coin_Server" and coin:GetAttribute("CoinID") == "BeachBall" then
+                        local cv = coin:FindFirstChild("CoinVisual")
+                        if cv and cv.Transparency ~= 1 and hrp then
+                            found = true
+                            local targetPos = coin.Position
+                            targetPos = Vector3.new(targetPos.X, math.max(targetPos.Y, 5), targetPos.Z)
+                            local duration = math.clamp((hrp.Position - targetPos).Magnitude / walkSpeed, 0.2, 5)
+                            local tweenInfo = TweenInfo.new(
+                                duration, -- duration зависит от расстояния и скорости
+                                Enum.EasingStyle.Linear
+                            )
+                            local tween = TweenService:Create(hrp, tweenInfo, {CFrame = CFrame.new(targetPos)})
+                            tween:Play()
+                            tween.Completed:Wait()
+                            break
+                        end
+                    end
+                end
+                if not found then task.wait(1) end
             end
-            if not found then task.wait(1) end
-        end
-    end)
+            setMapCollision(true)
+        end)
+    else
+        setMapCollision(true)
+    end
 end)
 
 -- NoPlayerColl (toggle)
