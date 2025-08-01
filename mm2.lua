@@ -202,7 +202,7 @@ tpBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- Сбор мячей (toggle, with 1s delay and "walking")
+-- Сбор мячей (toggle, с 1s задержкой и имитацией W)
 collectBtn.MouseButton1Click:Connect(function()
     toggles.collect = not toggles.collect
     collectBtn.Text = toggles.collect and "Сбор: ВКЛ" or "Сбор мячей"
@@ -227,16 +227,10 @@ collectBtn.MouseButton1Click:Connect(function()
                     if cv and cv.Transparency ~= 1 then
                         local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
                         if hrp then
-                            -- "walking" to coin (simulate W key): move small steps
-                            local steps = math.ceil((hrp.Position - coin.Position).Magnitude / (walkSpeed * 0.5))
-                            local dir = (coin.Position - hrp.Position).Unit
-                            for i = 1, steps do
-                                if not toggles.collect then break end
-                                hrp.CFrame = hrp.CFrame + dir * walkSpeed * 0.5
-                                RunService.Heartbeat:Wait()
-                            end
-                            task.wait(0.4)
-                            -- "проходит вперед" (как W) — симуляция движения
+                            -- Телепорт к мячу
+                            hrp.CFrame = CFrame.new(safeVector3(coin.Position))
+                            task.wait(1) -- задержка между телепортами
+                            -- "проходит вперед" (как W) — симуляция движения вперед
                             local dir2 = hrp.CFrame.LookVector
                             hrp.CFrame = hrp.CFrame + dir2 * 2
                             task.wait(0.2)
@@ -244,7 +238,6 @@ collectBtn.MouseButton1Click:Connect(function()
                                 hrp.CFrame = CFrame.new(safeVector3(point))
                             end
                         end
-                        task.wait(1) -- задержка между телепортами
                     end
                 end
             end
@@ -253,7 +246,7 @@ collectBtn.MouseButton1Click:Connect(function()
     end)
 end)
 
--- Полет к мячам (toggle, оптимизированный и с восстановлением коллизии)
+-- Полет к мячам (оптимизированный и с восстановлением коллизии)
 flightBtn.MouseButton1Click:Connect(function()
     toggles.flight = not toggles.flight
     flightBtn.Text = toggles.flight and "Полет: ВКЛ" or "Полет к мячам"
@@ -283,11 +276,14 @@ flightBtn.MouseButton1Click:Connect(function()
                             found = true
                             local maxSteps = 100 -- максимум шагов на один мяч
                             local steps = 0
-                            while toggles.flight and (hrp.Position - coin.Position).Magnitude > 2 and steps < maxSteps do
+                            local dist = (hrp.Position - coin.Position).Magnitude
+                            -- Если очень далеко - делаем пошагово, иначе телепортируемся
+                            while toggles.flight and dist > 2 and steps < maxSteps do
                                 local dir = (coin.Position - hrp.Position).Unit
-                                hrp.CFrame = hrp.CFrame + dir * math.min(walkSpeed * 0.5, (hrp.Position - coin.Position).Magnitude)
+                                hrp.CFrame = hrp.CFrame + dir * math.min(walkSpeed * 0.5, dist)
                                 steps = steps + 1
                                 task.wait(0.05)
+                                dist = (hrp.Position - coin.Position).Magnitude
                             end
                             break
                         end
