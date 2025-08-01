@@ -201,6 +201,7 @@ tpBtn.MouseButton1Click:Connect(function()
     end
 end)
 
+-- Сбор мячей: обычный телепорт, убран телепорт вперед
 collectBtn.MouseButton1Click:Connect(function()
     toggles.collect = not toggles.collect
     collectBtn.Text = toggles.collect and "Сбор: ВКЛ" or "Сбор мячей"
@@ -225,10 +226,7 @@ collectBtn.MouseButton1Click:Connect(function()
                         local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
                         if hrp then
                             hrp.CFrame = CFrame.new(safeVector3(coin.Position))
-                            task.wait(0.4)
-                            local dir2 = hrp.CFrame.LookVector
-                            hrp.CFrame = hrp.CFrame + dir2 * 2
-                            task.wait(0.2)
+                            task.wait(0.5) -- задержка на мяче
                             if point then
                                 hrp.CFrame = CFrame.new(safeVector3(point))
                             end
