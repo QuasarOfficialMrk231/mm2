@@ -1,14 +1,10 @@
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 local player = Players.LocalPlayer
 
 local draggingBtn, draggingFrame, dragInputBtn, dragInputFrame, dragStartBtn, dragStartFrame, startPosBtn, startPosFrame
 local point = nil
-local collecting = false
-local flying = false
-local noCollide = false
 local walkSpeed = 16
 
 local minX, maxX = -999999, 999999
@@ -36,7 +32,7 @@ dragBtn.ZIndex = 20
 dragBtn.AutoButtonColor = false
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 152, 0, 212)
+frame.Size = UDim2.new(0, 170, 0, 240)
 frame.Position = UDim2.new(0.25, 0, 0.18, 0)
 frame.BackgroundColor3 = Color3.fromRGB(16, 16, 18)
 frame.Visible = false
@@ -49,7 +45,6 @@ stroke.Thickness = 2
 local corner = Instance.new("UICorner", frame)
 corner.CornerRadius = UDim.new(0, 9)
 
--- Раздельный drag для "=" и окна
 dragBtn.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
         draggingBtn = true
@@ -139,9 +134,10 @@ setSpeedCorner.CornerRadius = UDim.new(0, 5)
 local setPointBtn = createButton("Установить точку", 8)
 local tpBtn = createButton("Телепорт к точке", 32)
 local collectBtn = createButton("Сбор мячей", 56)
-local flightBtn = createButton("Полет к мячам", 80)
-local npcBtn = createButton("NoPlayerColl", 104)
-local supportBtn = createButton("Поддержать автора", 128)
+local flightBtn = createButton("Флай к мячам", 80)
+local nearestBtn = createButton("Телепорт к ближайшему мячу", 104)
+local npcBtn = createButton("NoPlayerColl", 128)
+local supportBtn = createButton("Поддержать автора", 152)
 
 local supportUrl = "https://www.donationalerts.com/r/Ew3qs"
 
@@ -212,7 +208,38 @@ tpBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- Сбор мячей: обычный телепорт, рандомная задержка
+-- Телепорт к ближайшему мячу
+nearestBtn.MouseButton1Click:Connect(function()
+    local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    local nearest, minDist
+    local map, container
+    for _, m in pairs(workspace:GetChildren()) do
+        if m:IsA("Model") and m:GetAttribute("MapID") then
+            map = m
+            break
+        end
+    end
+    if map then container = map:FindFirstChild("CoinContainer") end
+    if not container then return end
+    for _, coin in ipairs(container:GetChildren()) do
+        if coin:IsA("Part") and coin.Name == "Coin_Server" and coin:GetAttribute("CoinID") == "BeachBall" then
+            local cv = coin:FindFirstChild("CoinVisual")
+            if cv and cv.Transparency ~= 1 then
+                local dist = (hrp.Position - coin.Position).Magnitude
+                if not minDist or dist < minDist then
+                    minDist = dist
+                    nearest = coin
+                end
+            end
+        end
+    end
+    if nearest then
+        hrp.CFrame = CFrame.new(safeVector3(nearest.Position))
+    end
+end)
+
+-- Сбор мячей с рандомной задержкой, без возврата на точку
 collectBtn.MouseButton1Click:Connect(function()
     toggles.collect = not toggles.collect
     collectBtn.Text = toggles.collect and "Сбор: ВКЛ" or "Сбор мячей"
@@ -229,22 +256,22 @@ collectBtn.MouseButton1Click:Connect(function()
             if map then container = map:FindFirstChild("CoinContainer") end
             if not container then task.wait(1) continue end
 
+            local coins = {}
             for _, coin in ipairs(container:GetChildren()) do
-                if not toggles.collect then break end
                 if coin:IsA("Part") and coin.Name == "Coin_Server" and coin:GetAttribute("CoinID") == "BeachBall" then
                     local cv = coin:FindFirstChild("CoinVisual")
                     if cv and cv.Transparency ~= 1 then
-                        local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-                        if hrp then
-                            hrp.CFrame = CFrame.new(safeVector3(coin.Position))
-                            task.wait(math.random(15, 30)/10) -- задержка от 1.5 до 3 секунд
-                            if point then
-                                task.wait(math.random(10, 20)/10) -- задержка от 1 до 2 секунд
-                                hrp.CFrame = CFrame.new(safeVector3(point))
-                            end
-                        end
-                        task.wait(1)
+                        table.insert(coins, coin)
                     end
+                end
+            end
+
+            for _, coin in ipairs(coins) do
+                if not toggles.collect then break end
+                local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    hrp.CFrame = CFrame.new(safeVector3(coin.Position))
+                    task.wait(math.random(15, 30)/10) -- 1.5 - 3 сек
                 end
             end
             task.wait(1)
@@ -252,12 +279,13 @@ collectBtn.MouseButton1Click:Connect(function()
     end)
 end)
 
+-- Флай к мячам (smooth fly, не телепорт), отключение гравитации и коллизии
 flightBtn.MouseButton1Click:Connect(function()
     toggles.flight = not toggles.flight
-    flightBtn.Text = toggles.flight and "Полет: ВКЛ" or "Полет к мячам"
+    flightBtn.Text = toggles.flight and "Флай: ВКЛ" or "Флай к мячам"
     if toggles.flight then
         spawn(function()
-            workspace.FallenPartsDestroyHeight = -10000
+            Workspace.FallenPartsDestroyHeight = -10000
             setMapCollision(false)
             setGravity(false)
             while toggles.flight do
@@ -279,17 +307,15 @@ flightBtn.MouseButton1Click:Connect(function()
                         local cv = coin:FindFirstChild("CoinVisual")
                         if cv and cv.Transparency ~= 1 and hrp then
                             found = true
-                            local maxSteps = 120
-                            local steps = 0
-                            while toggles.flight and (hrp.Position - coin.Position).Magnitude > 2 and steps < maxSteps do
+                            local flySpeed = walkSpeed * 2 -- Быстрее обычного
+                            while toggles.flight and (hrp.Position - coin.Position).Magnitude > 2 do
                                 local from = hrp.Position
                                 local to = coin.Position
-                                local dir = (Vector3.new(to.X, from.Y, to.Z) - from).Unit
-                                local nextPos = from + dir * math.min(walkSpeed * 0.5, (Vector3.new(to.X, from.Y, to.Z) - from).Magnitude)
-                                hrp.CFrame = CFrame.new(safeVector3(nextPos), Vector3.new(to.X, from.Y, to.Z))
-                                steps = steps + 1
-                                task.wait(0.05)
+                                local dir = (to - from).Unit
+                                hrp.CFrame = CFrame.new(safeVector3(from + dir * math.min(flySpeed * 0.1, (to - from).Magnitude)), to)
+                                task.wait(0.02)
                             end
+                            task.wait(math.random(15, 30)/10) -- 1.5 - 3 сек на мяче
                             break
                         end
                     end
@@ -344,7 +370,7 @@ frame:GetPropertyChangedSignal("Visible"):Connect(function()
     if not frame.Visible then
         setPointBtn.Text = "Установить точку"
         collectBtn.Text = "Сбор мячей"
-        flightBtn.Text = "Полет к мячам"
+        flightBtn.Text = "Флай к мячам"
         npcBtn.Text = "NoPlayerColl"
     end
 end)
