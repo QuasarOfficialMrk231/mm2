@@ -1,167 +1,304 @@
--- // Инициализация
+-- DeltaX BeachBall GUI & Functions (compact, mobile+PC, all features)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
-local LocalPlayer = Players.LocalPlayer
-local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+local player = Players.LocalPlayer
 
-local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
-local dragFrame = Instance.new("Frame", ScreenGui)
-dragFrame.Size = UDim2.new(0, 200, 0, 250)
-dragFrame.Position = UDim2.new(0.5, -100, 0.5, -125)
-dragFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-dragFrame.Active = true
-dragFrame.Draggable = true
+local dragging, dragInput, dragStart, startPos
+local point = nil
+local collecting = false
+local flying = false
+local noCollide = false
+local walkSpeed = 16
 
-local toggleButton = Instance.new("TextButton", ScreenGui)
-toggleButton.Size = UDim2.new(0, 30, 0, 30)
-toggleButton.Position = UDim2.new(0, 0, 0, 100)
-toggleButton.Text = "="
-toggleButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-toggleButton.TextSize = 20
+-- UI
+local gui = Instance.new("ScreenGui")
+gui.Name = "DeltaXBeachBallUI"
+gui.Parent = game:GetService("CoreGui")
 
-local isGuiVisible = true
-toggleButton.MouseButton1Click:Connect(function()
-    isGuiVisible = not isGuiVisible
-    dragFrame.Visible = isGuiVisible
+local dragBtn = Instance.new("TextButton")
+dragBtn.Text = "="
+dragBtn.Size = UDim2.new(0, 28, 0, 28)
+dragBtn.Position = UDim2.new(0.05, 0, 0.18, 0)
+dragBtn.BackgroundColor3 = Color3.fromRGB(30,30,30)
+dragBtn.TextColor3 = Color3.fromRGB(255,255,255)
+dragBtn.Parent = gui
+dragBtn.ZIndex = 20
+dragBtn.AutoButtonColor = false
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 152, 0, 212)
+frame.Position = UDim2.new(0.05, 34, 0.18, 0)
+frame.BackgroundColor3 = Color3.fromRGB(16, 16, 18)
+frame.Visible = false
+frame.Parent = gui
+frame.ZIndex = 19
+
+local stroke = Instance.new("UIStroke", frame)
+stroke.Color = Color3.fromRGB(0, 170, 255)
+stroke.Thickness = 2
+local corner = Instance.new("UICorner", frame)
+corner.CornerRadius = UDim.new(0, 9)
+
+-- Drag logic for mobile/PC
+local function makeDraggable(guiObj)
+    guiObj.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = guiObj.Position
+            dragInput = input
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input == dragInput) and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            guiObj.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+end
+makeDraggable(dragBtn)
+makeDraggable(frame)
+
+-- Show/hide window
+dragBtn.MouseButton1Click:Connect(function()
+    frame.Visible = not frame.Visible
 end)
 
--- // Кнопки GUI
-local function CreateButton(name, posY)
-    local btn = Instance.new("TextButton", dragFrame)
-    btn.Size = UDim2.new(1, -10, 0, 25)
-    btn.Position = UDim2.new(0, 5, 0, posY)
-    btn.Text = name
-    btn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-    btn.TextSize = 12
+-- Button creator (compact buttons)
+local function createButton(text, posY)
+    local btn = Instance.new("TextButton", frame)
+    btn.Size = UDim2.new(0.87, 0, 0, 20)
+    btn.Position = UDim2.new(0.06, 0, 0, posY)
+    btn.BackgroundColor3 = Color3.fromRGB(24, 24, 26)
+    btn.TextColor3 = Color3.fromRGB(255,255,255)
+    btn.Text = text
+    btn.TextSize = 13
+    btn.Font = Enum.Font.Code
+    btn.ZIndex = 21
+    local stroke = Instance.new("UIStroke", btn)
+    stroke.Color = Color3.fromRGB(0, 170, 255)
+    stroke.Thickness = 1
+    local corner = Instance.new("UICorner", btn)
+    corner.CornerRadius = UDim.new(0, 5)
     return btn
 end
 
-local speedInput = Instance.new("TextBox", dragFrame)
-speedInput.Size = UDim2.new(1, -10, 0, 25)
-speedInput.Position = UDim2.new(0, 5, 0, 5)
-speedInput.PlaceholderText = "Введите скорость"
-speedInput.TextSize = 12
+-- UI Elements
+local speedBox = Instance.new("TextBox", frame)
+speedBox.Size = UDim2.new(0.57, 0, 0, 20)
+speedBox.Position = UDim2.new(0.07, 0, 1, -27)
+speedBox.PlaceholderText = "Скорость"
+speedBox.TextColor3 = Color3.fromRGB(255,255,255)
+speedBox.BackgroundColor3 = Color3.fromRGB(30,30,30)
+speedBox.Text = ""
+speedBox.TextSize = 13
+speedBox.Font = Enum.Font.Code
+speedBox.ZIndex = 21
+local speedCorner = Instance.new("UICorner", speedBox)
+speedCorner.CornerRadius = UDim.new(0, 5)
 
-local setSpeedBtn = CreateButton("Установить скорость", 35)
-local noPlayerCollBtn = CreateButton("NoPlayerColl", 65)
-local flyToBallsBtn = CreateButton("Полет к мячам", 95)
-local collectBallsBtn = CreateButton("Сбор мячей", 125)
-local setPointBtn = CreateButton("Установить точку", 155)
-local teleportToPointBtn = CreateButton("Телепорт к точке", 185)
-local supportBtn = CreateButton("Поддержать @Ew3qs", 215)
+local setSpeedBtn = Instance.new("TextButton", frame)
+setSpeedBtn.Size = UDim2.new(0.29, 0, 0, 20)
+setSpeedBtn.Position = UDim2.new(0.66, 0, 1, -27)
+setSpeedBtn.Text = "Уст."
+setSpeedBtn.TextColor3 = Color3.fromRGB(255,255,255)
+setSpeedBtn.BackgroundColor3 = Color3.fromRGB(25,25,25)
+setSpeedBtn.TextSize = 13
+setSpeedBtn.Font = Enum.Font.Code
+setSpeedBtn.ZIndex = 21
+local setSpeedCorner = Instance.new("UICorner", setSpeedBtn)
+setSpeedCorner.CornerRadius = UDim.new(0, 5)
 
--- // Переменные состояния
-local flySpeed = 50
-local noPlayerCollActive = false
-local flyToBallsActive = false
-local collectBallsActive = false
-local savedPoint = nil
+local setPointBtn = createButton("Установить точку", 8)
+local tpBtn = createButton("Телепорт к точке", 32)
+local collectBtn = createButton("Сбор мячей", 56)
+local flightBtn = createButton("Полет к мячам", 80)
+local npcBtn = createButton("NoPlayerColl", 104)
+local supportBtn = createButton("Поддержать автора", 128)
 
--- // Установить скорость
+-- @Ew3qs donate link
+local supportUrl = "https://www.donationalerts.com/r/Ew3qs"
+
+-- Button toggles
+local toggles = {
+    collect = false,
+    flight = false,
+    nocollide = false,
+}
+
+-- Установить скорость
 setSpeedBtn.MouseButton1Click:Connect(function()
-    local val = tonumber(speedInput.Text)
-    if val then
-        flySpeed = val
-    end
-end)
-
--- // NoPlayerColl Toggle
-noPlayerCollBtn.MouseButton1Click:Connect(function()
-    noPlayerCollActive = not noPlayerCollActive
-    for _, v in pairs(Character:GetDescendants()) do
-        if v:IsA("BasePart") and v.Name ~= "LeftFoot" and v.Name ~= "RightFoot" then
-            v.CanCollide = not noPlayerCollActive
+    local val = tonumber(speedBox.Text)
+    if val and val > 0 and val <= 400 then
+        walkSpeed = val
+        local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+        if hum then
+            hum.WalkSpeed = walkSpeed
         end
+    else
+        speedBox.Text = ""
     end
 end)
 
--- // Установить точку
+-- Установить точку
 setPointBtn.MouseButton1Click:Connect(function()
-    if HumanoidRootPart then
-        savedPoint = HumanoidRootPart.CFrame
+    local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        point = hrp.Position
+        setPointBtn.Text = "Точка установлена!"
+        task.wait(0.75)
+        setPointBtn.Text = "Установить точку"
     end
 end)
 
--- // Телепорт к точке
-teleportToPointBtn.MouseButton1Click:Connect(function()
-    if savedPoint then
-        HumanoidRootPart.CFrame = savedPoint
+-- Телепорт к точке
+tpBtn.MouseButton1Click:Connect(function()
+    local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if hrp and point then
+        hrp.CFrame = CFrame.new(point)
     end
 end)
 
--- // Поддержка автора
-supportBtn.MouseButton1Click:Connect(function()
-    setclipboard("https://www.donationalerts.com/r/Ew3qs")
-end)
-
--- // Fly To Balls Toggle
-flyToBallsBtn.MouseButton1Click:Connect(function()
-    flyToBallsActive = not flyToBallsActive
-end)
-
--- // Collect Balls Toggle
-collectBallsBtn.MouseButton1Click:Connect(function()
-    collectBallsActive = not collectBallsActive
-end)
-
--- // Поиск мячей
-local function findNearestBall()
-    local map = nil
-    for _, m in pairs(workspace:GetDescendants()) do
-        if m:IsA("Model") and m:GetAttribute("MapID") then
-            map = m
-            break
-        end
-    end
-    if not map then return nil end
-
-    local CoinContainer = map:FindFirstChild("CoinContainer")
-    if not CoinContainer then return nil end
-
-    for _, coin in ipairs(CoinContainer:GetChildren()) do
-        if coin:IsA("Part") and coin.Name == "Coin_Server" and coin:GetAttribute("CoinID") == "BeachBall" then
-            local cv = coin:FindFirstChild("CoinVisual")
-            if cv and cv.Transparency ~= 1 then
-                return coin
+-- Сбор мячей (toggle)
+collectBtn.MouseButton1Click:Connect(function()
+    toggles.collect = not toggles.collect
+    collectBtn.Text = toggles.collect and "Сбор: ВКЛ" or "Сбор мячей"
+    if not toggles.collect then return end
+    spawn(function()
+        while toggles.collect do
+            -- Поиск карты и контейнера
+            local map, container
+            for _, m in pairs(workspace:GetChildren()) do
+                if m:IsA("Model") and m:GetAttribute("MapID") then
+                    map = m
+                    break
+                end
             end
-        end
-    end
-    return nil
-end
+            if map then container = map:FindFirstChild("CoinContainer") end
+            if not container then task.wait(1) continue end
 
--- // Полет к мячам цикл
-RunService.RenderStepped:Connect(function()
-    if flyToBallsActive then
-        local ball = findNearestBall()
-        if ball and HumanoidRootPart then
-            local direction = (ball.Position - HumanoidRootPart.Position).Unit
-            HumanoidRootPart.CFrame = HumanoidRootPart.CFrame + direction * (flySpeed * RunService.RenderStepped:Wait())
-        end
-    end
-end)
-
--- // Сбор мячей цикл
-RunService.RenderStepped:Connect(function()
-    if collectBallsActive then
-        local ball = findNearestBall()
-        if ball and savedPoint and HumanoidRootPart then
-            HumanoidRootPart.CFrame = ball.CFrame
-            task.wait(0.5)
-            for i = 1, 3 do
-                HumanoidRootPart.CFrame = HumanoidRootPart.CFrame * CFrame.new(0, 0, -1)
-                task.wait(0.1)
+            for _, coin in ipairs(container:GetChildren()) do
+                if not toggles.collect then break end
+                if coin:IsA("Part") and coin.Name == "Coin_Server" and coin:GetAttribute("CoinID") == "BeachBall" then
+                    local cv = coin:FindFirstChild("CoinVisual")
+                    if cv and cv.Transparency ~= 1 then
+                        local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+                        if hrp then
+                            hrp.CFrame = CFrame.new(coin.Position)
+                            task.wait(0.4)
+                            -- "проходит вперед" (как W) — симуляция движения
+                            local dir = hrp.CFrame.LookVector
+                            hrp.CFrame = hrp.CFrame + dir * 2
+                            task.wait(0.2)
+                            if point then
+                                hrp.CFrame = CFrame.new(point)
+                            end
+                        end
+                        task.wait(1)
+                    end
+                end
             end
-            HumanoidRootPart.CFrame = savedPoint
             task.wait(1)
         end
+    end)
+end)
+
+-- Полет к мячам (toggle)
+flightBtn.MouseButton1Click:Connect(function()
+    toggles.flight = not toggles.flight
+    flightBtn.Text = toggles.flight and "Полет: ВКЛ" or "Полет к мячам"
+    if not toggles.flight then return end
+    spawn(function()
+        workspace.FallenPartsDestroyHeight = -10000
+        while toggles.flight do
+            -- Отключить коллизию всей карты
+            for _, v in pairs(workspace:GetDescendants()) do
+                if v:IsA("BasePart") then v.CanCollide = false end
+            end
+            -- Поиск ближайшего BeachBall
+            local map, container
+            for _, m in pairs(workspace:GetChildren()) do
+                if m:IsA("Model") and m:GetAttribute("MapID") then
+                    map = m
+                    break
+                end
+            end
+            if map then container = map:FindFirstChild("CoinContainer") end
+            if not container then task.wait(1) continue end
+
+            local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+            local found = false
+            for _, coin in ipairs(container:GetChildren()) do
+                if not toggles.flight then break end
+                if coin:IsA("Part") and coin.Name == "Coin_Server" and coin:GetAttribute("CoinID") == "BeachBall" then
+                    local cv = coin:FindFirstChild("CoinVisual")
+                    if cv and cv.Transparency ~= 1 and hrp then
+                        found = true
+                        local dir = (coin.Position - hrp.Position).Unit
+                        while toggles.flight and (hrp.Position - coin.Position).Magnitude > 2 do
+                            hrp.CFrame = hrp.CFrame + dir * walkSpeed * RunService.Heartbeat:Wait()
+                        end
+                        break
+                    end
+                end
+            end
+            if not found then task.wait(1) end
+        end
+    end)
+end)
+
+-- NoPlayerColl (toggle)
+npcBtn.MouseButton1Click:Connect(function()
+    toggles.nocollide = not toggles.nocollide
+    npcBtn.Text = toggles.nocollide and "NoColl: ВКЛ" or "NoPlayerColl"
+    local char = player.Character
+    if char then
+        for _, part in ipairs(char:GetChildren()) do
+            if part:IsA("BasePart") then
+                -- ноги (нижняя часть) ищем по имени, обычно "LeftFoot"/"RightFoot"/"Foot"
+                if part.Name:lower():find("foot") or part.Name:lower():find("leg") then
+                    part.CanCollide = true
+                else
+                    part.CanCollide = not toggles.nocollide
+                end
+            end
+        end
     end
 end)
 
--- // Anti-Idle
-local vu = game:GetService("VirtualUser")
-Players.LocalPlayer.Idled:Connect(function()
-    vu:CaptureController()
-    vu:ClickButton2(Vector2.new())
+-- Поддержать автора (копировать ссылку)
+supportBtn.MouseButton1Click:Connect(function()
+    if setclipboard then
+        setclipboard(supportUrl)
+    else
+        -- для мобильных устройств (может не работать во всех исполнениях)
+        speedBox.Text = "Скопировано!"
+        task.wait(1)
+        speedBox.Text = ""
+    end
+end)
+
+-- Anti-AFK
+pcall(function()
+    local VirtualUser = game:GetService("VirtualUser")
+    Players.LocalPlayer.Idled:Connect(function()
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.new())
+    end)
+end)
+
+-- Сброс кнопок при скрытии окна
+frame:GetPropertyChangedSignal("Visible"):Connect(function()
+    if not frame.Visible then
+        setPointBtn.Text = "Установить точку"
+        collectBtn.Text = "Сбор мячей"
+        flightBtn.Text = "Полет к мячам"
+        npcBtn.Text = "NoPlayerColl"
+    end
 end)
