@@ -11,6 +11,18 @@ local flying = false
 local noCollide = false
 local walkSpeed = 16
 
+-- Ограничения на координаты для безопасного телепорта
+local minX, maxX = -999999, 999999
+local minY, maxY = -999999, 999999
+local minZ, maxZ = -999999, 999999
+
+local function safeVector3(pos)
+    local x = math.max(math.min(pos.X, maxX), minX)
+    local y = math.max(math.min(pos.Y, maxY), minY)
+    local z = math.max(math.min(pos.Z, maxZ), minZ)
+    return Vector3.new(x, y, z)
+end
+
 -- UI
 local gui = Instance.new("ScreenGui")
 gui.Name = "DeltaXBeachBallUI"
@@ -150,7 +162,7 @@ end)
 setPointBtn.MouseButton1Click:Connect(function()
     local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
     if hrp then
-        point = hrp.Position
+        point = safeVector3(hrp.Position)
         setPointBtn.Text = "Точка установлена!"
         task.wait(0.75)
         setPointBtn.Text = "Установить точку"
@@ -161,7 +173,7 @@ end)
 tpBtn.MouseButton1Click:Connect(function()
     local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
     if hrp and point then
-        hrp.CFrame = CFrame.new(point)
+        hrp.CFrame = CFrame.new(safeVector3(point))
     end
 end)
 
@@ -204,7 +216,7 @@ collectBtn.MouseButton1Click:Connect(function()
                             hrp.CFrame = hrp.CFrame + dir2 * 2
                             task.wait(0.2)
                             if point then
-                                hrp.CFrame = CFrame.new(point)
+                                hrp.CFrame = CFrame.new(safeVector3(point))
                             end
                         end
                         task.wait(1) -- задержка между телепортами
@@ -216,7 +228,7 @@ collectBtn.MouseButton1Click:Connect(function()
     end)
 end)
 
--- Полет к мячам (toggle)
+-- Полет к мячам (toggle, оптимизированный, с лимитами)
 flightBtn.MouseButton1Click:Connect(function()
     toggles.flight = not toggles.flight
     flightBtn.Text = toggles.flight and "Полет: ВКЛ" or "Полет к мячам"
@@ -247,9 +259,14 @@ flightBtn.MouseButton1Click:Connect(function()
                     local cv = coin:FindFirstChild("CoinVisual")
                     if cv and cv.Transparency ~= 1 and hrp then
                         found = true
-                        local dir = (coin.Position - hrp.Position).Unit
-                        while toggles.flight and (hrp.Position - coin.Position).Magnitude > 2 do
-                            hrp.CFrame = hrp.CFrame + dir * walkSpeed * RunService.Heartbeat:Wait()
+                        local maxSteps = 100 -- максимум шагов на один мяч, чтоб не зависнуть
+                        local steps = 0
+                        while toggles.flight and (hrp.Position - coin.Position).Magnitude > 2 and steps < maxSteps do
+                            local dir = (coin.Position - hrp.Position).Unit
+                            local nextPos = safeVector3(hrp.Position + dir * math.min(walkSpeed * 0.5, (hrp.Position - coin.Position).Magnitude))
+                            hrp.CFrame = CFrame.new(nextPos)
+                            steps = steps + 1
+                            task.wait(0.05) -- задержка! не меньше 0.04-0.05
                         end
                         break
                     end
