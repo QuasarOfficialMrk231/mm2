@@ -1,19 +1,15 @@
--- DeltaX BeachBall GUI & Functions (compact, mobile+PC, all features, bugfixes)
+-- DeltaX BeachBall GUI & Functions (compact, mobile+PC, all features)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local player = Players.LocalPlayer
 
-local draggingBtn, draggingFrame = false, false
-local dragInputBtn, dragInputFrame, dragStartBtn, dragStartFrame, startPosBtn, startPosFrame
+local dragging, dragInput, dragStart, startPos
 local point = nil
 local collecting = false
 local flying = false
 local noCollide = false
 local walkSpeed = 16
-
--- Store original collisions to restore later
-local originalCollisions = {}
 
 -- UI
 local gui = Instance.new("ScreenGui")
@@ -44,47 +40,30 @@ stroke.Thickness = 2
 local corner = Instance.new("UICorner", frame)
 corner.CornerRadius = UDim.new(0, 9)
 
--- Drag logic for "=" button (independent)
-dragBtn.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        draggingBtn = true
-        dragStartBtn = input.Position
-        startPosBtn = dragBtn.Position
-        dragInputBtn = input
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                draggingBtn = false
-            end
-        end)
-    end
-end)
-UserInputService.InputChanged:Connect(function(input)
-    if draggingBtn and (input == dragInputBtn) and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - dragStartBtn
-        dragBtn.Position = UDim2.new(startPosBtn.X.Scale, startPosBtn.X.Offset + delta.X, startPosBtn.Y.Scale, startPosBtn.Y.Offset + delta.Y)
-    end
-end)
-
--- Drag logic for main window (independent)
-frame.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        draggingFrame = true
-        dragStartFrame = input.Position
-        startPosFrame = frame.Position
-        dragInputFrame = input
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                draggingFrame = false
-            end
-        end)
-    end
-end)
-UserInputService.InputChanged:Connect(function(input)
-    if draggingFrame and (input == dragInputFrame) and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - dragStartFrame
-        frame.Position = UDim2.new(startPosFrame.X.Scale, startPosFrame.X.Offset + delta.X, startPosFrame.Y.Scale, startPosFrame.Y.Offset + delta.Y)
-    end
-end)
+-- Drag logic for mobile/PC
+local function makeDraggable(guiObj)
+    guiObj.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = guiObj.Position
+            dragInput = input
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input == dragInput) and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            guiObj.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+end
+makeDraggable(dragBtn)
+makeDraggable(frame)
 
 -- Show/hide window
 dragBtn.MouseButton1Click:Connect(function()
@@ -186,7 +165,7 @@ tpBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- Сбор мячей (toggle)
+-- Сбор мячей (toggle, with 1s delay and "walking")
 collectBtn.MouseButton1Click:Connect(function()
     toggles.collect = not toggles.collect
     collectBtn.Text = toggles.collect and "Сбор: ВКЛ" or "Сбор мячей"
@@ -211,17 +190,24 @@ collectBtn.MouseButton1Click:Connect(function()
                     if cv and cv.Transparency ~= 1 then
                         local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
                         if hrp then
-                            hrp.CFrame = CFrame.new(coin.Position)
+                            -- "walking" to coin (simulate W key): move small steps
+                            local steps = math.ceil((hrp.Position - coin.Position).Magnitude / (walkSpeed * 0.5))
+                            local dir = (coin.Position - hrp.Position).Unit
+                            for i = 1, steps do
+                                if not toggles.collect then break end
+                                hrp.CFrame = hrp.CFrame + dir * walkSpeed * 0.5
+                                RunService.Heartbeat:Wait()
+                            end
                             task.wait(0.4)
                             -- "проходит вперед" (как W) — симуляция движения
-                            local dir = hrp.CFrame.LookVector
-                            hrp.CFrame = hrp.CFrame + dir * 2
+                            local dir2 = hrp.CFrame.LookVector
+                            hrp.CFrame = hrp.CFrame + dir2 * 2
                             task.wait(0.2)
                             if point then
                                 hrp.CFrame = CFrame.new(point)
                             end
                         end
-                        task.wait(1)
+                        task.wait(1) -- задержка между телепортами
                     end
                 end
             end
@@ -230,71 +216,48 @@ collectBtn.MouseButton1Click:Connect(function()
     end)
 end)
 
--- Restore all collisions for map (utility)
-local function restoreMapCollision()
-    for part, cancollide in pairs(originalCollisions) do
-        if part and part:IsA("BasePart") then
-            part.CanCollide = cancollide
-        end
-    end
-    originalCollisions = {}
-end
-
--- Save and set collision off for map (utility)
-local function setMapCollisionOff()
-    originalCollisions = {} -- clear previous
-    for _, v in pairs(workspace:GetDescendants()) do
-        if v:IsA("BasePart") then
-            originalCollisions[v] = v.CanCollide
-            v.CanCollide = false
-        end
-    end
-end
-
--- Полет к мячам (toggle, collision restore/fix)
+-- Полет к мячам (toggle)
 flightBtn.MouseButton1Click:Connect(function()
     toggles.flight = not toggles.flight
     flightBtn.Text = toggles.flight and "Полет: ВКЛ" or "Полет к мячам"
-    if toggles.flight then
-        setMapCollisionOff()
+    if not toggles.flight then return end
+    spawn(function()
         workspace.FallenPartsDestroyHeight = -10000
-        spawn(function()
-            while toggles.flight do
-                -- Поиск ближайшего BeachBall
-                local map, container
-                for _, m in pairs(workspace:GetChildren()) do
-                    if m:IsA("Model") and m:GetAttribute("MapID") then
-                        map = m
+        while toggles.flight do
+            -- Отключить коллизию всей карты
+            for _, v in pairs(workspace:GetDescendants()) do
+                if v:IsA("BasePart") then v.CanCollide = false end
+            end
+            -- Поиск ближайшего BeachBall
+            local map, container
+            for _, m in pairs(workspace:GetChildren()) do
+                if m:IsA("Model") and m:GetAttribute("MapID") then
+                    map = m
+                    break
+                end
+            end
+            if map then container = map:FindFirstChild("CoinContainer") end
+            if not container then task.wait(1) continue end
+
+            local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+            local found = false
+            for _, coin in ipairs(container:GetChildren()) do
+                if not toggles.flight then break end
+                if coin:IsA("Part") and coin.Name == "Coin_Server" and coin:GetAttribute("CoinID") == "BeachBall" then
+                    local cv = coin:FindFirstChild("CoinVisual")
+                    if cv and cv.Transparency ~= 1 and hrp then
+                        found = true
+                        local dir = (coin.Position - hrp.Position).Unit
+                        while toggles.flight and (hrp.Position - coin.Position).Magnitude > 2 do
+                            hrp.CFrame = hrp.CFrame + dir * walkSpeed * RunService.Heartbeat:Wait()
+                        end
                         break
                     end
                 end
-                if map then container = map:FindFirstChild("CoinContainer") end
-                if not container then task.wait(1) continue end
-
-                local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-                local found = false
-                for _, coin in ipairs(container:GetChildren()) do
-                    if not toggles.flight then break end
-                    if coin:IsA("Part") and coin.Name == "Coin_Server" and coin:GetAttribute("CoinID") == "BeachBall" then
-                        local cv = coin:FindFirstChild("CoinVisual")
-                        if cv and cv.Transparency ~= 1 and hrp then
-                            found = true
-                            local dir = (coin.Position - hrp.Position).Unit
-                            while toggles.flight and (hrp.Position - coin.Position).Magnitude > 2 do
-                                hrp.CFrame = hrp.CFrame + dir * walkSpeed * RunService.Heartbeat:Wait()
-                            end
-                            break
-                        end
-                    end
-                end
-                if not found then task.wait(1) end
             end
-            -- restore collision when flight OFF
-            restoreMapCollision()
-        end)
-    else
-        restoreMapCollision()
-    end
+            if not found then task.wait(1) end
+        end
+    end)
 end)
 
 -- NoPlayerColl (toggle)
@@ -305,6 +268,7 @@ npcBtn.MouseButton1Click:Connect(function()
     if char then
         for _, part in ipairs(char:GetChildren()) do
             if part:IsA("BasePart") then
+                -- ноги (нижняя часть) ищем по имени, обычно "LeftFoot"/"RightFoot"/"Foot"
                 if part.Name:lower():find("foot") or part.Name:lower():find("leg") then
                     part.CanCollide = true
                 else
@@ -320,6 +284,7 @@ supportBtn.MouseButton1Click:Connect(function()
     if setclipboard then
         setclipboard(supportUrl)
     else
+        -- для мобильных устройств (может не работать во всех исполнениях)
         speedBox.Text = "Скопировано!"
         task.wait(1)
         speedBox.Text = ""
