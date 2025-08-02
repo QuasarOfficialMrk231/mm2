@@ -208,7 +208,6 @@ tpBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- Телепорт к ближайшему мячу
 nearestBtn.MouseButton1Click:Connect(function()
     local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
@@ -239,7 +238,6 @@ nearestBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- Сбор мячей с рандомной задержкой, без возврата на точку
 collectBtn.MouseButton1Click:Connect(function()
     toggles.collect = not toggles.collect
     collectBtn.Text = toggles.collect and "Сбор: ВКЛ" or "Сбор мячей"
@@ -271,7 +269,7 @@ collectBtn.MouseButton1Click:Connect(function()
                 local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
                 if hrp then
                     hrp.CFrame = CFrame.new(safeVector3(coin.Position))
-                    task.wait(math.random(15, 30)/10) -- 1.5 - 3 сек
+                    task.wait(math.random(15, 30)/10)
                 end
             end
             task.wait(1)
@@ -279,7 +277,6 @@ collectBtn.MouseButton1Click:Connect(function()
     end)
 end)
 
--- Флай к мячам (smooth fly, не телепорт), отключение гравитации и коллизии
 flightBtn.MouseButton1Click:Connect(function()
     toggles.flight = not toggles.flight
     flightBtn.Text = toggles.flight and "Флай: ВКЛ" or "Флай к мячам"
@@ -300,27 +297,46 @@ flightBtn.MouseButton1Click:Connect(function()
                 if not container then task.wait(1) continue end
 
                 local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-                local found = false
+                if not hrp then task.wait(0.2) continue end
+
+                local nearest, minDist
                 for _, coin in ipairs(container:GetChildren()) do
-                    if not toggles.flight then break end
                     if coin:IsA("Part") and coin.Name == "Coin_Server" and coin:GetAttribute("CoinID") == "BeachBall" then
                         local cv = coin:FindFirstChild("CoinVisual")
-                        if cv and cv.Transparency ~= 1 and hrp then
-                            found = true
-                            local flySpeed = walkSpeed * 2 -- Быстрее обычного
-                            while toggles.flight and (hrp.Position - coin.Position).Magnitude > 2 do
-                                local from = hrp.Position
-                                local to = coin.Position
-                                local dir = (to - from).Unit
-                                hrp.CFrame = CFrame.new(safeVector3(from + dir * math.min(flySpeed * 0.1, (to - from).Magnitude)), to)
-                                task.wait(0.02)
+                        if cv and cv.Transparency ~= 1 then
+                            local dist = (hrp.Position - coin.Position).Magnitude
+                            if not minDist or dist < minDist then
+                                minDist = dist
+                                nearest = coin
                             end
-                            task.wait(math.random(15, 30)/10) -- 1.5 - 3 сек на мяче
-                            break
                         end
                     end
                 end
-                if not found then task.wait(1) end
+
+                if nearest then
+                    local targetPos = nearest.Position
+                    local flySpeed = walkSpeed * 2
+                    local bodyVel = hrp:FindFirstChild("DeltaXFlyBV") or Instance.new("BodyVelocity")
+                    bodyVel.Name = "DeltaXFlyBV"
+                    bodyVel.MaxForce = Vector3.new(1e5, 1e5, 1e5)
+                    bodyVel.Parent = hrp
+
+                    while toggles.flight and nearest.Parent and (hrp.Position - targetPos).Magnitude > 2 do
+                        local dir = (targetPos - hrp.Position).Unit
+                        bodyVel.Velocity = dir * flySpeed
+                        hrp.CFrame = CFrame.new(hrp.Position, targetPos)
+                        task.wait()
+                    end
+                    if bodyVel then bodyVel:Destroy() end
+                    task.wait(math.random(15, 30)/10)
+                else
+                    task.wait(1)
+                end
+            end
+            local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                local bv = hrp:FindFirstChild("DeltaXFlyBV")
+                if bv then bv:Destroy() end
             end
             setMapCollision(true)
             setGravity(true)
@@ -328,6 +344,11 @@ flightBtn.MouseButton1Click:Connect(function()
     else
         setMapCollision(true)
         setGravity(true)
+        local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            local bv = hrp:FindFirstChild("DeltaXFlyBV")
+            if bv then bv:Destroy() end
+        end
     end
 end)
 
