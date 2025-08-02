@@ -246,7 +246,7 @@ nearestBtn.MouseButton1Click:Connect(function()
     end)
 end)
 
--- Сбор мячей с задержкой 0.1 сек после каждого телепорта
+-- Сбор мячей с задержкой 0.1 сек после каждого телепорта и с защитой от краша
 collectBtn.MouseButton1Click:Connect(function()
     toggles.collect = not toggles.collect
     collectBtn.Text = toggles.collect and "Сбор: ВКЛ" or "Сбор мячей"
@@ -263,6 +263,7 @@ collectBtn.MouseButton1Click:Connect(function()
             if map then container = map:FindFirstChild("CoinContainer") end
             if not container then task.wait(1) continue end
 
+            -- Собираем только существующие мячи
             local coins = {}
             for _, coin in ipairs(container:GetChildren()) do
                 if coin:IsA("Part") and coin.Name == "Coin_Server" and coin:GetAttribute("CoinID") == "BeachBall" then
@@ -275,10 +276,16 @@ collectBtn.MouseButton1Click:Connect(function()
 
             for _, coin in ipairs(coins) do
                 if not toggles.collect then break end
-                local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-                if hrp then
-                    hrp.CFrame = CFrame.new(safeVector3(coin.Position))
-                    task.wait(0.1) -- 0.1 секунда после сбора мяча
+                -- Защитa: проверяем что мяч есть в игре и его визуальная часть ещё видимая
+                if coin and coin.Parent then
+                    local cv = coin:FindFirstChild("CoinVisual")
+                    if cv and cv.Transparency ~= 1 then
+                        local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+                        if hrp then
+                            hrp.CFrame = CFrame.new(safeVector3(coin.Position))
+                        end
+                        task.wait(0.1) -- 0.1 секунда после сбора мяча
+                    end
                 end
             end
             task.wait(1)
@@ -286,7 +293,6 @@ collectBtn.MouseButton1Click:Connect(function()
     end)
 end)
 
--- ФУНКЦИЮ ПОЛЁТА НЕ ТРОГАЮ, ЛОГИКА ПОЛЁТА ОСТАЁТСЯ:
 flightBtn.MouseButton1Click:Connect(function()
     toggles.flight = not toggles.flight
     flightBtn.Text = toggles.flight and "Флай: ВКЛ" or "Флай к мячам"
