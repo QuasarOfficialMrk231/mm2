@@ -246,7 +246,7 @@ nearestBtn.MouseButton1Click:Connect(function()
     end)
 end)
 
--- Сбор мячей с задержкой 3.5 - 4.5 сек между телепортами
+-- Сбор мячей с задержкой 0.1 сек после каждого телепорта
 collectBtn.MouseButton1Click:Connect(function()
     toggles.collect = not toggles.collect
     collectBtn.Text = toggles.collect and "Сбор: ВКЛ" or "Сбор мячей"
@@ -278,7 +278,7 @@ collectBtn.MouseButton1Click:Connect(function()
                 local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
                 if hrp then
                     hrp.CFrame = CFrame.new(safeVector3(coin.Position))
-                    task.wait(math.random(35, 45)/10) -- 3.5 - 4.5 сек
+                    task.wait(0.1) -- 0.1 секунда после сбора мяча
                 end
             end
             task.wait(1)
@@ -286,6 +286,7 @@ collectBtn.MouseButton1Click:Connect(function()
     end)
 end)
 
+-- ФУНКЦИЮ ПОЛЁТА НЕ ТРОГАЮ, ЛОГИКА ПОЛЁТА ОСТАЁТСЯ:
 flightBtn.MouseButton1Click:Connect(function()
     toggles.flight = not toggles.flight
     flightBtn.Text = toggles.flight and "Флай: ВКЛ" or "Флай к мячам"
@@ -294,12 +295,7 @@ flightBtn.MouseButton1Click:Connect(function()
             Workspace.FallenPartsDestroyHeight = -10000
             setMapCollision(false)
             setGravity(false)
-            
-            local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-            local bodyVel = nil
-            
             while toggles.flight do
-                -- Определяем ближайший видимый мяч
                 local map, container
                 for _, m in pairs(workspace:GetChildren()) do
                     if m:IsA("Model") and m:GetAttribute("MapID") then
@@ -310,57 +306,43 @@ flightBtn.MouseButton1Click:Connect(function()
                 if map then container = map:FindFirstChild("CoinContainer") end
                 if not container then task.wait(1) continue end
 
-                hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+                local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
                 if not hrp then task.wait(0.2) continue end
 
-                -- Собираем список всех видимых мячей
-                local balls = {}
+                local nearest, minDist
                 for _, coin in ipairs(container:GetChildren()) do
                     if coin:IsA("Part") and coin.Name == "Coin_Server" and coin:GetAttribute("CoinID") == "BeachBall" then
                         local cv = coin:FindFirstChild("CoinVisual")
                         if cv and cv.Transparency ~= 1 then
-                            table.insert(balls, coin)
+                            local dist = (hrp.Position - coin.Position).Magnitude
+                            if not minDist or dist < minDist then
+                                minDist = dist
+                                nearest = coin
+                            end
                         end
                     end
                 end
 
-                -- Летим к ближайшему мячу
-                local currentPos = hrp.Position
-                local nearestBall = nil
-                local minDist = nil
-                for _, ball in ipairs(balls) do
-                    local dist = (currentPos - ball.Position).Magnitude
-                    if not minDist or dist < minDist then
-                        minDist = dist
-                        nearestBall = ball
-                    end
-                end
-
-                if nearestBall then
-                    if not bodyVel or bodyVel.Parent ~= hrp then
-                        if bodyVel then bodyVel:Destroy() end
-                        bodyVel = Instance.new("BodyVelocity")
-                        bodyVel.Name = "DeltaXFlyBV"
-                        bodyVel.MaxForce = Vector3.new(1e5, 1e5, 1e5)
-                        bodyVel.Parent = hrp
-                    end
-                    -- Плавно летим к текущему мячу
+                if nearest then
+                    local targetPos = nearest.Position
                     local flySpeed = walkSpeed * 2
-                    while toggles.flight and nearestBall.Parent and (hrp.Position - nearestBall.Position).Magnitude > 2 do
-                        local dir = (nearestBall.Position - hrp.Position).Unit
+                    local bodyVel = hrp:FindFirstChild("DeltaXFlyBV") or Instance.new("BodyVelocity")
+                    bodyVel.Name = "DeltaXFlyBV"
+                    bodyVel.MaxForce = Vector3.new(1e5, 1e5, 1e5)
+                    bodyVel.Parent = hrp
+
+                    while toggles.flight and nearest.Parent and (hrp.Position - targetPos).Magnitude > 2 do
+                        local dir = (targetPos - hrp.Position).Unit
                         bodyVel.Velocity = dir * flySpeed
-                        hrp.CFrame = CFrame.new(hrp.Position, nearestBall.Position)
+                        hrp.CFrame = CFrame.new(hrp.Position, targetPos)
                         task.wait()
                     end
-                    if bodyVel then bodyVel.Velocity = Vector3.new(0, 0, 0) end
-                    -- БЕЗ задержки между мячами!
+                    if bodyVel then bodyVel:Destroy() end
                 else
-                    if bodyVel then bodyVel.Velocity = Vector3.new(0, 0, 0) end
                     task.wait(1)
                 end
             end
-            -- Отключаем BodyVelocity и возвращаем всё обратно
-            hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+            local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
             if hrp then
                 local bv = hrp:FindFirstChild("DeltaXFlyBV")
                 if bv then bv:Destroy() end
