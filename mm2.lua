@@ -208,7 +208,11 @@ tpBtn.MouseButton1Click:Connect(function()
     end
 end)
 
+-- Ограничение на кнопку "Телепорт к ближайшему мячу" — раз в 4 секунды
+local canTpNearest = true
 nearestBtn.MouseButton1Click:Connect(function()
+    if not canTpNearest then return end
+    canTpNearest = false
     local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
     local nearest, minDist
@@ -220,7 +224,7 @@ nearestBtn.MouseButton1Click:Connect(function()
         end
     end
     if map then container = map:FindFirstChild("CoinContainer") end
-    if not container then return end
+    if not container then canTpNearest = true return end
     for _, coin in ipairs(container:GetChildren()) do
         if coin:IsA("Part") and coin.Name == "Coin_Server" and coin:GetAttribute("CoinID") == "BeachBall" then
             local cv = coin:FindFirstChild("CoinVisual")
@@ -236,8 +240,13 @@ nearestBtn.MouseButton1Click:Connect(function()
     if nearest then
         hrp.CFrame = CFrame.new(safeVector3(nearest.Position))
     end
+    task.spawn(function()
+        task.wait(4)
+        canTpNearest = true
+    end)
 end)
 
+-- Сбор мячей с задержкой 3.5 - 4.5 сек между телепортами
 collectBtn.MouseButton1Click:Connect(function()
     toggles.collect = not toggles.collect
     collectBtn.Text = toggles.collect and "Сбор: ВКЛ" or "Сбор мячей"
@@ -269,7 +278,7 @@ collectBtn.MouseButton1Click:Connect(function()
                 local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
                 if hrp then
                     hrp.CFrame = CFrame.new(safeVector3(coin.Position))
-                    task.wait(math.random(15, 30)/10)
+                    task.wait(math.random(35, 45)/10) -- 3.5 - 4.5 сек
                 end
             end
             task.wait(1)
@@ -344,7 +353,7 @@ flightBtn.MouseButton1Click:Connect(function()
                         task.wait()
                     end
                     if bodyVel then bodyVel.Velocity = Vector3.new(0, 0, 0) end
-                    task.wait(math.random(15, 30)/10)
+                    -- БЕЗ задержки между мячами!
                 else
                     if bodyVel then bodyVel.Velocity = Vector3.new(0, 0, 0) end
                     task.wait(1)
