@@ -1,8 +1,8 @@
--- Весь код ниже идентичен вашему, кроме уменьшенной задержки в функции полета к мячу с task.wait(math.random(15, 30)/10) на task.wait(0.2)
-
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
+local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
 local player = Players.LocalPlayer
 
 local draggingBtn, draggingFrame, dragInputBtn, dragInputFrame, dragStartBtn, dragStartFrame, startPosBtn, startPosFrame
@@ -34,7 +34,7 @@ dragBtn.ZIndex = 20
 dragBtn.AutoButtonColor = false
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 170, 0, 240)
+frame.Size = UDim2.new(0, 170, 0, 280)
 frame.Position = UDim2.new(0.25, 0, 0.18, 0)
 frame.BackgroundColor3 = Color3.fromRGB(16, 16, 18)
 frame.Visible = false
@@ -139,7 +139,9 @@ local collectBtn = createButton("Сбор мячей", 56)
 local flightBtn = createButton("Флай к мячам", 80)
 local nearestBtn = createButton("Телепорт к ближайшему мячу", 104)
 local npcBtn = createButton("NoPlayerColl", 128)
-local supportBtn = createButton("Поддержать автора", 152)
+local conneBtn = createButton("Conne", 152)
+local autoconneBtn = createButton("Autoconne: OFF", 176)
+local supportBtn = createButton("Поддержать автора", 200)
 
 local supportUrl = "https://www.donationalerts.com/r/Ew3qs"
 
@@ -147,6 +149,7 @@ local toggles = {
     collect = false,
     flight = false,
     nocollide = false,
+    autoconne = false,
 }
 
 local lastCollisions = {}
@@ -240,6 +243,8 @@ nearestBtn.MouseButton1Click:Connect(function()
     end
 end)
 
+local autoconneCounter = 0
+
 collectBtn.MouseButton1Click:Connect(function()
     toggles.collect = not toggles.collect
     collectBtn.Text = toggles.collect and "Сбор: ВКЛ" or "Сбор мячей"
@@ -272,6 +277,31 @@ collectBtn.MouseButton1Click:Connect(function()
                 if hrp then
                     hrp.CFrame = CFrame.new(safeVector3(coin.Position))
                     task.wait(math.random(15, 30)/10)
+                    autoconneCounter = autoconneCounter + 1
+                    if toggles.autoconne and autoconneCounter >= 40 then
+                        autoconneCounter = 0
+                        local PlaceId = game.PlaceId
+                        local jobid = game.JobId
+                        local servers = {}
+                        local req = syn and syn.request or http and http.request or http_request or fluxus and fluxus.request or request
+                        if req then
+                            local body = req({
+                                Url = "https://games.roblox.com/v1/games/"..PlaceId.."/servers/Public?sortOrder=2&limit=100"
+                            }).Body
+                            local decoded = HttpService:JSONDecode(body)
+                            for _, v in next, decoded.data do
+                                if v.playing < v.maxPlayers and v.id ~= jobid then
+                                    table.insert(servers, v.id)
+                                end
+                            end
+                        end
+                        if #servers > 0 then
+                            TeleportService:TeleportToPlaceInstance(PlaceId, servers[math.random(1, #servers)], Players.LocalPlayer)
+                        else
+                            TeleportService:Teleport(PlaceId)
+                        end
+                        return
+                    end
                 end
             end
             task.wait(1)
@@ -346,7 +376,7 @@ flightBtn.MouseButton1Click:Connect(function()
                         task.wait()
                     end
                     if bodyVel then bodyVel.Velocity = Vector3.new(0, 0, 0) end
-                    task.wait(0.2) -- уменьшенная задержка между мячами
+                    task.wait(0.2)
                 else
                     if bodyVel then bodyVel.Velocity = Vector3.new(0, 0, 0) end
                     task.wait(1)
@@ -389,6 +419,39 @@ npcBtn.MouseButton1Click:Connect(function()
     end
 end)
 
+-- Кнопка Conne — переподключение к другому серверу
+conneBtn.MouseButton1Click:Connect(function()
+    local PlaceId = game.PlaceId
+    local jobid = game.JobId
+    local servers = {}
+    local req = syn and syn.request or http and http.request or http_request or fluxus and fluxus.request or request
+    if req then
+        local body = req({
+            Url = "https://games.roblox.com/v1/games/"..PlaceId.."/servers/Public?sortOrder=2&limit=100"
+        }).Body
+        local decoded = HttpService:JSONDecode(body)
+        for _, v in next, decoded.data do
+            if v.playing < v.maxPlayers and v.id ~= jobid then
+                table.insert(servers, v.id)
+            end
+        end
+    end
+    if #servers > 0 then
+        TeleportService:TeleportToPlaceInstance(PlaceId, servers[math.random(1, #servers)], Players.LocalPlayer)
+    else
+        TeleportService:Teleport(PlaceId)
+    end
+end)
+
+-- Кнопка Autoconne — переключатель автоконнекта
+autoconneBtn.MouseButton1Click:Connect(function()
+    toggles.autoconne = not toggles.autoconne
+    autoconneBtn.Text = toggles.autoconne and "Autoconne: ON" or "Autoconne: OFF"
+    if not toggles.autoconne then
+        autoconneCounter = 0 -- сбрасываем счетчик если выключили
+    end
+end)
+
 supportBtn.MouseButton1Click:Connect(function()
     if setclipboard then
         setclipboard(supportUrl)
@@ -413,5 +476,6 @@ frame:GetPropertyChangedSignal("Visible"):Connect(function()
         collectBtn.Text = "Сбор мячей"
         flightBtn.Text = "Флай к мячам"
         npcBtn.Text = "NoPlayerColl"
+        autoconneBtn.Text = toggles.autoconne and "Autoconne: ON" or "Autoconne: OFF"
     end
 end)
